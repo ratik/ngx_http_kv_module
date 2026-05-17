@@ -168,5 +168,5 @@ Benchmark runs write stable JSON, raw tool output, metadata, and a markdown repo
 benchmarks/results/<timestamp>-<git-sha>/
 ```
 
-Captured metadata includes git SHA, OS, CPU, Nginx version, Memcached version, module config, and worker settings. `bench-compare` fails when RPS drops by more than 10%, p99 latency increases by more than 15%, errors exceed 0.1%, or any timeout occurs. CI runs the performance regression job when `benchmarks/baseline/main.json` exists. CI never updates the baseline automatically; baseline changes require `make bench-update-baseline` and an explicit commit.
+Captured metadata includes git SHA, OS, CPU, Nginx version, Memcached version, module config, and worker settings. `bench-compare` fails when RPS drops by more than 10%, p99 latency increases by more than 15%, errors exceed 0.1%, or any timeout occurs. Baselines are machine-specific; CI does not run performance comparisons. Baseline changes require `make bench-update-baseline` and an explicit commit.
 
