@@ -26,20 +26,96 @@ location /kv/ {
 }
 ```
 
-## Build dynamic module
+## Installation
+
+### 1. Install build dependencies
+
+Debian/Ubuntu:
 
 ```sh
-wget https://nginx.org/download/nginx-1.27.4.tar.gz
-tar xzf nginx-1.27.4.tar.gz
-cd nginx-1.27.4
+sudo apt-get update
+sudo apt-get install -y build-essential ca-certificates wget libpcre3-dev zlib1g-dev libssl-dev memcached
+```
+
+RHEL/Fedora:
+
+```sh
+sudo dnf install -y gcc make wget pcre-devel zlib-devel openssl-devel memcached
+```
+
+### 2. Build dynamic module
+
+Build against same Nginx version and compatible configure flags as target Nginx. For stock source build:
+
+```sh
+NGINX_VERSION=1.27.4
+wget https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
+tar xzf nginx-${NGINX_VERSION}.tar.gz
+cd nginx-${NGINX_VERSION}
 ./configure --with-compat --add-dynamic-module=/path/to/ngx_http_kv_module
 make modules
 ```
 
-Then load:
+Output:
+
+```sh
+objs/ngx_http_kv_module.so
+```
+
+### 3. Install module
+
+Copy module into Nginx modules directory:
+
+```sh
+sudo cp objs/ngx_http_kv_module.so /etc/nginx/modules/
+# or, for source-installed nginx:
+# sudo cp objs/ngx_http_kv_module.so /usr/local/nginx/modules/
+```
+
+Load it in top-level `nginx.conf` before `events {}`:
 
 ```nginx
 load_module modules/ngx_http_kv_module.so;
+```
+
+### 4. Configure location
+
+```nginx
+server {
+    listen 8080;
+
+    location /kv/ {
+        kv_memcached_pass unix:/run/memcached/memcached.sock;
+        kv_default_ttl 300;
+        kv_max_value_size 1m;
+        kv_key_prefix "app:";
+    }
+}
+```
+
+### 5. Start Memcached on Unix socket
+
+```sh
+sudo mkdir -p /run/memcached
+sudo chown memcache:memcache /run/memcached 2>/dev/null || sudo chown nobody:nogroup /run/memcached
+sudo memcached -u memcache -s /run/memcached/memcached.sock -a 770
+```
+
+Ensure Nginx worker user can access socket. If using `www-data`, make socket group readable/writable by that user/group.
+
+### 6. Validate and reload Nginx
+
+```sh
+sudo nginx -t
+sudo nginx -s reload
+```
+
+Smoke test:
+
+```sh
+curl -i -X PUT --data-binary 'hello' http://127.0.0.1:8080/kv/foo
+curl -i http://127.0.0.1:8080/kv/foo
+curl -i -X DELETE http://127.0.0.1:8080/kv/foo
 ```
 
 ## Memcached Unix socket
