@@ -301,6 +301,48 @@ def write_report(doc, path, baseline=None, failures=None):
     path.write_text("\n".join(lines) + "\n")
 
 
+def ab_report(args):
+    a_path = Path(args.a) / "results.json" if Path(args.a).is_dir() else Path(args.a)
+    b_path = Path(args.b) / "results.json" if Path(args.b).is_dir() else Path(args.b)
+    a = json.loads(a_path.read_text())
+    b = json.loads(b_path.read_text())
+    aa, bb = by_name(a), by_name(b)
+    names = [n for n in bb if n in aa]
+    out = Path(args.output) if args.output else b_path.parent / "ab-report.md"
+
+    lines = [
+        "# Keepalive A/B benchmark report",
+        "",
+        f"A: `{args.a_label}` -> `{a_path.parent}`",
+        f"B: `{args.b_label}` -> `{b_path.parent}`",
+        "",
+        "| Benchmark | A RPS | B RPS | RPS delta | A p99 ms | B p99 ms | p99 delta | B errors | B timeouts |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+
+    summary = {"a": str(a_path), "b": str(b_path), "a_label": args.a_label, "b_label": args.b_label, "benchmarks": []}
+    for name in names:
+        x, y = aa[name], bb[name]
+        ar, br = x.get("rps"), y.get("rps")
+        ap, bp = x.get("p99_ms"), y.get("p99_ms")
+        rd = ((br - ar) / ar) if ar and br is not None else None
+        pd = ((bp - ap) / ap) if ap and bp is not None else None
+        summary["benchmarks"].append({"name": name, "rps_delta": rd, "p99_delta": pd, "a": x, "b": y})
+        rd_s = f"{rd:+.1%}" if rd is not None else "n/a"
+        pd_s = f"{pd:+.1%}" if pd is not None else "n/a"
+        lines.append(
+            f"| {name} | {ar or 0:.2f} | {br or 0:.2f} | "
+            f"{rd_s} | {ap or 0:.2f} | {bp or 0:.2f} | "
+            f"{pd_s} | {y.get('errors', 0)} | {y.get('timeouts', 0)} |"
+        )
+
+    lines += ["", "Positive RPS delta means keepalive is faster. Negative p99 delta means keepalive latency is lower."]
+    out.write_text("\n".join(lines) + "\n")
+    (out.parent / "ab-summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    print(out)
+    return 0
+
+
 def update_baseline(args):
     src = Path(args.results) if args.results else latest_results()
     BASELINE.parent.mkdir(parents=True, exist_ok=True)
@@ -318,6 +360,12 @@ def main():
     c.add_argument("--results")
     u = sub.add_parser("update-baseline")
     u.add_argument("--results")
+    ab = sub.add_parser("ab-report")
+    ab.add_argument("--a", required=True)
+    ab.add_argument("--b", required=True)
+    ab.add_argument("--a-label", default="A")
+    ab.add_argument("--b-label", default="B")
+    ab.add_argument("--output")
     args = ap.parse_args()
     try:
         if args.cmd == "bench":
@@ -326,6 +374,8 @@ def main():
             return compare(args)
         if args.cmd == "update-baseline":
             return update_baseline(args)
+        if args.cmd == "ab-report":
+            return ab_report(args)
     except Exception as e:
         print(f"error: {e}", file=sys.stderr)
         return 2

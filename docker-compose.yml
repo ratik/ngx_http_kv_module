@@ -7,8 +7,11 @@ services:
         NGINX_VERSION: ${NGINX_VERSION:-1.27.4}
         SANITIZERS: ${SANITIZERS:-0}
     environment:
+      NGINX_CONF: ${NGINX_CONF:-/usr/local/nginx/conf/nginx.conf}
       ASAN_OPTIONS: ${ASAN_OPTIONS:-detect_leaks=0:detect_odr_violation=0:abort_on_error=1}
       UBSAN_OPTIONS: ${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}
+    volumes:
+      - ./examples:/workspace/examples:ro
     ports:
       - "8080:8080"
     healthcheck:
@@ -86,7 +89,7 @@ services:
     environment:
       KV_BENCH_URL: http://kv-nginx:8080
       NGINX_VERSION: ${NGINX_VERSION:-1.27.4}
-      NGINX_CONF_PATH: /workspace/examples/nginx.conf
+      NGINX_CONF_PATH: ${NGINX_CONF_PATH:-/workspace/examples/nginx.conf}
     command: ["bench", "--base-url", "http://kv-nginx:8080"]
 
   bench-compare:
