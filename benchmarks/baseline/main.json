@@ -1,0 +1,96 @@
+{
+  "benchmarks": [
+    {
+      "command": [
+        "wrk",
+        "-t2",
+        "-c32",
+        "-d15s",
+        "--latency",
+        "-s",
+        "/workspace/benchmarks/scripts/wrk-get.lua",
+        "http://kv-nginx:8080"
+      ],
+      "error_rate": 0.0,
+      "errors": 0,
+      "name": "wrk-get-existing",
+      "p99_ms": 2.8,
+      "returncode": 0,
+      "rps": 43707.31,
+      "timeouts": 0,
+      "tool": "wrk"
+    },
+    {
+      "command": [
+        "wrk",
+        "-t2",
+        "-c16",
+        "-d15s",
+        "--latency",
+        "-s",
+        "/workspace/benchmarks/scripts/wrk-put.lua",
+        "http://kv-nginx:8080"
+      ],
+      "error_rate": 0.0,
+      "errors": 0,
+      "name": "wrk-put-small",
+      "p99_ms": 1.05,
+      "returncode": 0,
+      "rps": 1.06,
+      "timeouts": 0,
+      "tool": "wrk"
+    },
+    {
+      "command": [
+        "wrk2",
+        "-t2",
+        "-c32",
+        "-d15s",
+        "-R1000",
+        "--latency",
+        "-s",
+        "/workspace/benchmarks/scripts/wrk2-get.lua",
+        "http://kv-nginx:8080"
+      ],
+      "error_rate": 0.0,
+      "errors": 0,
+      "name": "wrk2-get-existing",
+      "p99_ms": 4.44,
+      "returncode": 0,
+      "rps": 47954.87,
+      "timeouts": 0,
+      "tool": "wrk2"
+    },
+    {
+      "command": [
+        "sh",
+        "-lc",
+        "vegeta attack -duration=15s -rate=200 -targets=/workspace/benchmarks/results/20260517T114227Z-e182d78cc011/vegeta-targets.txt | vegeta report -type=json"
+      ],
+      "error_rate": 0.0,
+      "errors": 0,
+      "name": "vegeta-get-existing",
+      "p99_ms": 1.594268,
+      "returncode": 0,
+      "rps": 200.06816685234935,
+      "timeouts": 0,
+      "tool": "vegeta"
+    }
+  ],
+  "metadata": {
+    "base_url": "http://kv-nginx:8080",
+    "cpu": "",
+    "cpu_count": 4,
+    "git_sha": "e182d78cc0118fdf0046b3cda7fb3ce5b821d830",
+    "git_sha_short": "e182d78cc011",
+    "memcached_version": "memcached 1.6.18",
+    "module_config": "unknown",
+    "nginx_version": "sh: 1: /usr/local/nginx/sbin/nginx: not found",
+    "os": "Linux-6.8.0-47-generic-aarch64-with-glibc2.36",
+    "timestamp": "2026-05-17T11:43:27.441272+00:00",
+    "worker_settings": {
+      "worker_connections": 1024,
+      "worker_processes": "auto"
+    }
+  }
+}
