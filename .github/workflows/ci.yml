@@ -53,7 +53,6 @@ jobs:
   performance:
     name: Performance regression
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('benchmarks/baseline/main.json') != '' }}
     env:
       NGINX_VERSION: 1.27.4
       COMPOSE_PROFILES: bench
@@ -63,14 +62,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check for baseline
+        id: baseline
+        run: |
+          if [ -f benchmarks/baseline/main.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No benchmarks/baseline/main.json; skipping performance regression check."
+          fi
+
       - name: Run benchmarks
+        if: steps.baseline.outputs.exists == 'true'
         run: make bench
 
       - name: Compare with baseline
+        if: steps.baseline.outputs.exists == 'true'
         run: make bench-compare
 
       - name: Upload performance report
-        if: always()
+        if: always() && steps.baseline.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: performance-results
