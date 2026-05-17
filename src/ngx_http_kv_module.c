@@ -14,6 +14,46 @@ static u_char ngx_http_kv_end[] = CRLF "END" CRLF;
 
 
 typedef struct {
+    ngx_uint_t                         max_cached;
+    ngx_uint_t                         requests;
+    ngx_msec_t                         time;
+    ngx_msec_t                         timeout;
+
+    ngx_queue_t                        cache;
+    ngx_queue_t                        free;
+
+    ngx_http_upstream_init_pt          original_init_upstream;
+    ngx_http_upstream_init_peer_pt     original_init_peer;
+
+    unsigned                           configured:1;
+} ngx_http_kv_srv_conf_t;
+
+
+typedef struct {
+    ngx_http_upstream_srv_conf_t      *uscf;
+    ngx_http_kv_srv_conf_t            *kscf;
+} ngx_http_kv_keepalive_map_t;
+
+
+typedef struct {
+    ngx_http_kv_srv_conf_t            *conf;
+    ngx_queue_t                        queue;
+    ngx_connection_t                  *connection;
+    socklen_t                          socklen;
+    ngx_sockaddr_t                     sockaddr;
+} ngx_http_kv_keepalive_cache_t;
+
+
+typedef struct {
+    ngx_http_kv_srv_conf_t            *conf;
+    ngx_http_upstream_t               *upstream;
+    void                              *data;
+    ngx_event_get_peer_pt              original_get_peer;
+    ngx_event_free_peer_pt             original_free_peer;
+} ngx_http_kv_keepalive_peer_data_t;
+
+
+typedef struct {
     ngx_http_upstream_conf_t   upstream;
     ngx_str_t                  backend;
     ngx_uint_t                 default_ttl;
@@ -21,6 +61,10 @@ typedef struct {
     ngx_str_t                  key_prefix;
     ngx_uint_t                 allow_methods;
     ngx_uint_t                 not_found_status;
+    ngx_uint_t                 keepalive;
+    ngx_uint_t                 keepalive_requests;
+    ngx_msec_t                 keepalive_time;
+    ngx_msec_t                 keepalive_timeout;
 } ngx_http_kv_loc_conf_t;
 
 
@@ -37,6 +81,13 @@ typedef struct {
 } ngx_http_kv_ctx_t;
 
 
+static ngx_array_t *ngx_http_kv_keepalive_maps;
+
+static ngx_int_t ngx_http_kv_preconfiguration(ngx_conf_t *cf);
+static ngx_http_kv_srv_conf_t *ngx_http_kv_keepalive_get_conf(
+    ngx_http_upstream_srv_conf_t *uscf);
+static ngx_int_t ngx_http_kv_keepalive_set_conf(ngx_conf_t *cf,
+    ngx_http_upstream_srv_conf_t *uscf, ngx_http_kv_srv_conf_t *kscf);
 static ngx_int_t ngx_http_kv_handler(ngx_http_request_t *r);
 static void ngx_http_kv_put_body_handler(ngx_http_request_t *r);
 static ngx_int_t ngx_http_kv_start_upstream(ngx_http_request_t *r,
@@ -59,6 +110,18 @@ static ngx_int_t ngx_http_kv_parse_key(ngx_http_request_t *r,
 static ngx_int_t ngx_http_kv_parse_ttl(ngx_http_request_t *r,
     ngx_http_kv_ctx_t *ctx, ngx_http_kv_loc_conf_t *klcf);
 static ngx_int_t ngx_http_kv_body_length(ngx_http_request_t *r, off_t *len);
+static void *ngx_http_kv_create_srv_conf(ngx_conf_t *cf);
+static ngx_int_t ngx_http_kv_init_keepalive(ngx_conf_t *cf,
+    ngx_http_upstream_srv_conf_t *us);
+static ngx_int_t ngx_http_kv_init_keepalive_peer(ngx_http_request_t *r,
+    ngx_http_upstream_srv_conf_t *us);
+static ngx_int_t ngx_http_kv_get_keepalive_peer(ngx_peer_connection_t *pc,
+    void *data);
+static void ngx_http_kv_free_keepalive_peer(ngx_peer_connection_t *pc,
+    void *data, ngx_uint_t state);
+static void ngx_http_kv_keepalive_dummy_handler(ngx_event_t *ev);
+static void ngx_http_kv_keepalive_close_handler(ngx_event_t *ev);
+static void ngx_http_kv_keepalive_close(ngx_connection_t *c);
 
 
 static ngx_command_t ngx_http_kv_commands[] = {
@@ -126,16 +189,44 @@ static ngx_command_t ngx_http_kv_commands[] = {
       offsetof(ngx_http_kv_loc_conf_t, upstream.read_timeout),
       NULL },
 
+    { ngx_string("kv_memcached_keepalive"),
+      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_num_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_kv_loc_conf_t, keepalive),
+      NULL },
+
+    { ngx_string("kv_memcached_keepalive_requests"),
+      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_num_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_kv_loc_conf_t, keepalive_requests),
+      NULL },
+
+    { ngx_string("kv_memcached_keepalive_time"),
+      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_msec_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_kv_loc_conf_t, keepalive_time),
+      NULL },
+
+    { ngx_string("kv_memcached_keepalive_timeout"),
+      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_msec_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_kv_loc_conf_t, keepalive_timeout),
+      NULL },
+
     ngx_null_command
 };
 
 
 static ngx_http_module_t ngx_http_kv_module_ctx = {
+    ngx_http_kv_preconfiguration,
     NULL,
     NULL,
     NULL,
-    NULL,
-    NULL,
+    ngx_http_kv_create_srv_conf,
     NULL,
     ngx_http_kv_create_loc_conf,
     ngx_http_kv_merge_loc_conf
@@ -446,6 +537,7 @@ found:
             u->headers_in.content_length_n = 0;
             r->headers_out.status = klcf->not_found_status;
             r->headers_out.content_length_n = 0;
+            u->keepalive = 1;
             return NGX_OK;
         }
 
@@ -500,6 +592,7 @@ found:
             u->headers_in.content_length_n = 0;
             r->headers_out.status = NGX_HTTP_NO_CONTENT;
             r->headers_out.content_length_n = 0;
+            u->keepalive = 1;
             return NGX_OK;
         }
         return NGX_HTTP_UPSTREAM_INVALID_HEADER;
@@ -512,6 +605,7 @@ found:
         u->headers_in.content_length_n = 0;
         r->headers_out.status = NGX_HTTP_NO_CONTENT;
         r->headers_out.content_length_n = 0;
+        u->keepalive = 1;
         return NGX_OK;
     }
 
@@ -522,6 +616,7 @@ found:
         u->headers_in.content_length_n = 0;
         r->headers_out.status = klcf->not_found_status;
         r->headers_out.content_length_n = 0;
+        u->keepalive = 1;
         return NGX_OK;
     }
 
@@ -650,6 +745,327 @@ ngx_http_kv_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 }
 
 
+static ngx_int_t
+ngx_http_kv_preconfiguration(ngx_conf_t *cf)
+{
+    ngx_http_kv_keepalive_maps = ngx_array_create(cf->pool, 4,
+                                                  sizeof(ngx_http_kv_keepalive_map_t));
+    return ngx_http_kv_keepalive_maps == NULL ? NGX_ERROR : NGX_OK;
+}
+
+
+static ngx_http_kv_srv_conf_t *
+ngx_http_kv_keepalive_get_conf(ngx_http_upstream_srv_conf_t *uscf)
+{
+    ngx_uint_t                    i;
+    ngx_http_kv_keepalive_map_t  *m;
+
+    if (ngx_http_kv_keepalive_maps == NULL) {
+        return NULL;
+    }
+
+    m = ngx_http_kv_keepalive_maps->elts;
+    for (i = 0; i < ngx_http_kv_keepalive_maps->nelts; i++) {
+        if (m[i].uscf == uscf) {
+            return m[i].kscf;
+        }
+    }
+
+    return NULL;
+}
+
+
+static ngx_int_t
+ngx_http_kv_keepalive_set_conf(ngx_conf_t *cf,
+    ngx_http_upstream_srv_conf_t *uscf, ngx_http_kv_srv_conf_t *kscf)
+{
+    ngx_http_kv_keepalive_map_t *m;
+
+    if (ngx_http_kv_keepalive_maps == NULL) {
+        ngx_http_kv_keepalive_maps = ngx_array_create(cf->pool, 4,
+                                                      sizeof(ngx_http_kv_keepalive_map_t));
+        if (ngx_http_kv_keepalive_maps == NULL) {
+            return NGX_ERROR;
+        }
+    }
+
+    m = ngx_array_push(ngx_http_kv_keepalive_maps);
+    if (m == NULL) {
+        return NGX_ERROR;
+    }
+
+    m->uscf = uscf;
+    m->kscf = kscf;
+    return NGX_OK;
+}
+
+
+static void *
+ngx_http_kv_create_srv_conf(ngx_conf_t *cf)
+{
+    ngx_http_kv_srv_conf_t *conf;
+
+    conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_kv_srv_conf_t));
+    if (conf == NULL) {
+        return NULL;
+    }
+
+    return conf;
+}
+
+
+static ngx_int_t
+ngx_http_kv_init_keepalive(ngx_conf_t *cf, ngx_http_upstream_srv_conf_t *us)
+{
+    ngx_uint_t                  i;
+    ngx_http_kv_srv_conf_t    *kscf;
+    ngx_http_kv_keepalive_cache_t *cached;
+
+    kscf = ngx_http_kv_keepalive_get_conf(us);
+    if (kscf == NULL || !kscf->configured) {
+        return NGX_ERROR;
+    }
+
+    if (kscf->original_init_upstream(cf, us) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    kscf->original_init_peer = us->peer.init;
+    us->peer.init = ngx_http_kv_init_keepalive_peer;
+
+    cached = ngx_pcalloc(cf->pool,
+                         sizeof(ngx_http_kv_keepalive_cache_t) * kscf->max_cached);
+    if (cached == NULL) {
+        return NGX_ERROR;
+    }
+
+    ngx_queue_init(&kscf->cache);
+    ngx_queue_init(&kscf->free);
+
+    for (i = 0; i < kscf->max_cached; i++) {
+        cached[i].conf = kscf;
+        ngx_queue_insert_head(&kscf->free, &cached[i].queue);
+    }
+
+    return NGX_OK;
+}
+
+
+static ngx_int_t
+ngx_http_kv_init_keepalive_peer(ngx_http_request_t *r,
+    ngx_http_upstream_srv_conf_t *us)
+{
+    ngx_http_kv_srv_conf_t             *kscf;
+    ngx_http_kv_keepalive_peer_data_t  *kp;
+
+    kscf = ngx_http_kv_keepalive_get_conf(us);
+    if (kscf == NULL) {
+        return NGX_ERROR;
+    }
+
+    kp = ngx_palloc(r->pool, sizeof(ngx_http_kv_keepalive_peer_data_t));
+    if (kp == NULL) {
+        return NGX_ERROR;
+    }
+
+    if (kscf->original_init_peer(r, us) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    kp->conf = kscf;
+    kp->upstream = r->upstream;
+    kp->data = r->upstream->peer.data;
+    kp->original_get_peer = r->upstream->peer.get;
+    kp->original_free_peer = r->upstream->peer.free;
+
+    r->upstream->peer.data = kp;
+    r->upstream->peer.get = ngx_http_kv_get_keepalive_peer;
+    r->upstream->peer.free = ngx_http_kv_free_keepalive_peer;
+
+    return NGX_OK;
+}
+
+
+static ngx_int_t
+ngx_http_kv_get_keepalive_peer(ngx_peer_connection_t *pc, void *data)
+{
+    ngx_http_kv_keepalive_peer_data_t *kp = data;
+    ngx_http_kv_keepalive_cache_t     *item;
+    ngx_int_t                          rc;
+    ngx_queue_t                       *q;
+    ngx_connection_t                  *c;
+
+    rc = kp->original_get_peer(pc, kp->data);
+    if (rc != NGX_OK) {
+        return rc;
+    }
+
+    for (q = ngx_queue_head(&kp->conf->cache);
+         q != ngx_queue_sentinel(&kp->conf->cache);
+         q = ngx_queue_next(q))
+    {
+        item = ngx_queue_data(q, ngx_http_kv_keepalive_cache_t, queue);
+        c = item->connection;
+
+        if (ngx_memn2cmp((u_char *) &item->sockaddr, (u_char *) pc->sockaddr,
+                         item->socklen, pc->socklen) == 0)
+        {
+            ngx_queue_remove(q);
+            ngx_queue_insert_head(&kp->conf->free, q);
+
+            c->idle = 0;
+            c->sent = 0;
+            c->data = NULL;
+            c->log = pc->log;
+            c->read->log = pc->log;
+            c->write->log = pc->log;
+            c->pool->log = pc->log;
+
+            if (c->read->timer_set) {
+                ngx_del_timer(c->read);
+            }
+
+            pc->connection = c;
+            pc->cached = 1;
+            return NGX_DONE;
+        }
+    }
+
+    return NGX_OK;
+}
+
+
+static void
+ngx_http_kv_free_keepalive_peer(ngx_peer_connection_t *pc, void *data,
+    ngx_uint_t state)
+{
+    ngx_http_kv_keepalive_peer_data_t *kp = data;
+    ngx_http_kv_keepalive_cache_t     *item;
+    ngx_queue_t                       *q;
+    ngx_connection_t                  *c;
+    ngx_http_upstream_t               *u;
+
+    u = kp->upstream;
+    c = pc->connection;
+
+    if (state & NGX_PEER_FAILED
+        || c == NULL
+        || c->read->eof
+        || c->read->error
+        || c->read->timedout
+        || c->write->error
+        || c->write->timedout
+        || c->requests >= kp->conf->requests
+        || ngx_current_msec - c->start_time > kp->conf->time
+        || !u->keepalive
+        || !u->request_body_sent
+        || ngx_terminate
+        || ngx_exiting)
+    {
+        goto invalid;
+    }
+
+    if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
+        goto invalid;
+    }
+
+    if (ngx_queue_empty(&kp->conf->free)) {
+        q = ngx_queue_last(&kp->conf->cache);
+        ngx_queue_remove(q);
+        item = ngx_queue_data(q, ngx_http_kv_keepalive_cache_t, queue);
+        ngx_http_kv_keepalive_close(item->connection);
+    } else {
+        q = ngx_queue_head(&kp->conf->free);
+        ngx_queue_remove(q);
+        item = ngx_queue_data(q, ngx_http_kv_keepalive_cache_t, queue);
+    }
+
+    ngx_queue_insert_head(&kp->conf->cache, q);
+    item->connection = c;
+    pc->connection = NULL;
+
+    c->read->delayed = 0;
+    ngx_add_timer(c->read, kp->conf->timeout);
+
+    if (c->write->timer_set) {
+        ngx_del_timer(c->write);
+    }
+
+    c->write->handler = ngx_http_kv_keepalive_dummy_handler;
+    c->read->handler = ngx_http_kv_keepalive_close_handler;
+
+    c->data = item;
+    c->idle = 1;
+    c->log = ngx_cycle->log;
+    c->read->log = ngx_cycle->log;
+    c->write->log = ngx_cycle->log;
+    c->pool->log = ngx_cycle->log;
+
+    item->socklen = pc->socklen;
+    ngx_memcpy(&item->sockaddr, pc->sockaddr, pc->socklen);
+
+    if (c->read->ready) {
+        ngx_http_kv_keepalive_close_handler(c->read);
+    }
+
+invalid:
+
+    kp->original_free_peer(pc, kp->data, state);
+}
+
+
+static void
+ngx_http_kv_keepalive_dummy_handler(ngx_event_t *ev)
+{
+    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, ev->log, 0,
+                   "kv keepalive dummy handler");
+}
+
+
+static void
+ngx_http_kv_keepalive_close_handler(ngx_event_t *ev)
+{
+    ngx_http_kv_srv_conf_t         *conf;
+    ngx_http_kv_keepalive_cache_t  *item;
+    ngx_connection_t               *c;
+    char                            buf[1];
+    int                             n;
+
+    c = ev->data;
+
+    if (c->close || c->read->timedout) {
+        goto close;
+    }
+
+    n = recv(c->fd, buf, 1, MSG_PEEK);
+
+    if (n == -1 && ngx_socket_errno == NGX_EAGAIN) {
+        ev->ready = 0;
+        if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
+            goto close;
+        }
+        return;
+    }
+
+close:
+
+    item = c->data;
+    conf = item->conf;
+
+    ngx_http_kv_keepalive_close(c);
+    ngx_queue_remove(&item->queue);
+    ngx_queue_insert_head(&conf->free, &item->queue);
+}
+
+
+static void
+ngx_http_kv_keepalive_close(ngx_connection_t *c)
+{
+    ngx_destroy_pool(c->pool);
+    ngx_close_connection(c);
+}
+
+
 static void *
 ngx_http_kv_create_loc_conf(ngx_conf_t *cf)
 {
@@ -664,6 +1080,10 @@ ngx_http_kv_create_loc_conf(ngx_conf_t *cf)
     conf->max_value_size = NGX_CONF_UNSET_SIZE;
     conf->allow_methods = NGX_CONF_UNSET_UINT;
     conf->not_found_status = NGX_CONF_UNSET_UINT;
+    conf->keepalive = NGX_CONF_UNSET_UINT;
+    conf->keepalive_requests = NGX_CONF_UNSET_UINT;
+    conf->keepalive_time = NGX_CONF_UNSET_MSEC;
+    conf->keepalive_timeout = NGX_CONF_UNSET_MSEC;
 
     conf->upstream.connect_timeout = NGX_CONF_UNSET_MSEC;
     conf->upstream.send_timeout = NGX_CONF_UNSET_MSEC;
@@ -683,6 +1103,8 @@ ngx_http_kv_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 {
     ngx_http_kv_loc_conf_t *prev = parent;
     ngx_http_kv_loc_conf_t *conf = child;
+    ngx_http_kv_srv_conf_t *kscf;
+    ngx_http_upstream_srv_conf_t *uscf;
 
     ngx_conf_merge_uint_value(conf->default_ttl, prev->default_ttl, 0);
     ngx_conf_merge_size_value(conf->max_value_size, prev->max_value_size,
@@ -715,8 +1137,56 @@ ngx_http_kv_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     conf->upstream.pass_request_body = 1;
     conf->upstream.intercept_errors = 1;
 
+    ngx_conf_merge_uint_value(conf->keepalive, prev->keepalive, 0);
+    ngx_conf_merge_uint_value(conf->keepalive_requests,
+                              prev->keepalive_requests, 1000);
+    ngx_conf_merge_msec_value(conf->keepalive_time,
+                              prev->keepalive_time, 3600000);
+    ngx_conf_merge_msec_value(conf->keepalive_timeout,
+                              prev->keepalive_timeout, 60000);
+
     if (conf->upstream.upstream == NULL) {
         conf->upstream.upstream = prev->upstream.upstream;
+    }
+
+    if (conf->upstream.upstream && conf->keepalive > 0) {
+        uscf = conf->upstream.upstream;
+
+        kscf = ngx_http_kv_keepalive_get_conf(uscf);
+        if (kscf == NULL) {
+            kscf = ngx_pcalloc(cf->pool, sizeof(ngx_http_kv_srv_conf_t));
+            if (kscf == NULL) {
+                return NGX_CONF_ERROR;
+            }
+            if (ngx_http_kv_keepalive_set_conf(cf, uscf, kscf) != NGX_OK) {
+                return NGX_CONF_ERROR;
+            }
+        }
+
+        if (kscf->configured) {
+            if (kscf->max_cached != conf->keepalive
+                || kscf->requests != conf->keepalive_requests
+                || kscf->time != conf->keepalive_time
+                || kscf->timeout != conf->keepalive_timeout)
+            {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "conflicting kv_memcached_keepalive settings for backend \"%V\"",
+                                   &uscf->host);
+                return NGX_CONF_ERROR;
+            }
+
+            return NGX_CONF_OK;
+        }
+
+        kscf->max_cached = conf->keepalive;
+        kscf->requests = conf->keepalive_requests;
+        kscf->time = conf->keepalive_time;
+        kscf->timeout = conf->keepalive_timeout;
+        kscf->original_init_upstream = uscf->peer.init_upstream
+                                      ? uscf->peer.init_upstream
+                                      : ngx_http_upstream_init_round_robin;
+        uscf->peer.init_upstream = ngx_http_kv_init_keepalive;
+        kscf->configured = 1;
     }
 
     return NGX_CONF_OK;

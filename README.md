@@ -23,6 +23,9 @@ location /kv/ {
     kv_connect_timeout 2s;
     kv_send_timeout 2s;
     kv_read_timeout 2s;
+    kv_memcached_keepalive 32;
+    kv_memcached_keepalive_timeout 30s;
+    kv_memcached_keepalive_requests 10000;
 }
 ```
 
@@ -151,6 +154,7 @@ COMPOSE_PROFILES=bad-backend docker compose up --build kv-nginx-bad-backend test
 - PUT uses `ngx_http_read_client_request_body` and chains Nginx body buffers/files to upstream request.
 - Keys are URL-decoded and strictly rejected if empty, over 250 bytes after prefix, or containing spaces/control chars/CR/LF/NUL.
 - TTL is defaulted from config and can be overridden with `?ttl=<seconds>`.
+- `kv_memcached_keepalive` enables a per-worker idle Unix-socket connection pool to reduce Memcached connect/close churn. Set it to `0` to disable pooling.
 
 CI runs the Docker integration suite against Nginx 1.24.x, 1.26.x, and 1.27.x, plus an ASan/UBSan build on current mainline.
 
@@ -158,6 +162,7 @@ CI runs the Docker integration suite against Nginx 1.24.x, 1.26.x, and 1.27.x, p
 
 ```sh
 make bench                 # run fixed wrk/wrk2/vegeta benchmarks
+make bench-ab              # run no-keepalive vs keepalive A/B benchmark and report deltas
 make bench-compare         # compare latest result with benchmarks/baseline/main.json
 make bench-update-baseline # explicitly promote latest result to baseline
 ```
