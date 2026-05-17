@@ -1,0 +1,3 @@
+PUT http://kv-nginx:8080/kv/bench-vegeta-put?ttl=300
+Content-Type: application/octet-stream
+@/workspace/benchmarks/scripts/payload.bin

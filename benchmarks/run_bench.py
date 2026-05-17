@@ -27,9 +27,10 @@ BENCHMARKS = [
         "cmd": ["wrk", "-t2", "-c32", "-d15s", "--latency", "-s", str(SCRIPTS / "wrk-get.lua"), DEFAULT_BASE],
     },
     {
-        "name": "wrk-put-small",
-        "tool": "wrk",
-        "cmd": ["wrk", "-t2", "-c16", "-d15s", "--latency", "-s", str(SCRIPTS / "wrk-put.lua"), DEFAULT_BASE],
+        "name": "vegeta-put-small",
+        "tool": "vegeta",
+        "target_file": "vegeta-put-targets.txt",
+        "cmd": ["sh", "-lc", "vegeta attack -duration=15s -rate=200 -keepalive=false -targets={targets} | vegeta report -type=json"],
     },
     {
         "name": "wrk2-get-existing",
@@ -40,6 +41,7 @@ BENCHMARKS = [
     {
         "name": "vegeta-get-existing",
         "tool": "vegeta",
+        "target_file": "vegeta-targets.txt",
         "cmd": ["sh", "-lc", "vegeta attack -duration=15s -rate=200 -targets={targets} | vegeta report -type=json"],
     },
 ]
@@ -199,15 +201,17 @@ def run_bench(args):
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     outdir = RESULTS / f"{ts}-{sha}"
     outdir.mkdir(parents=True, exist_ok=False)
-    vegeta_targets = outdir / "vegeta-targets.txt"
-    vegeta_targets.write_text((SCRIPTS / "vegeta-targets.txt").read_text().replace("http://kv-nginx:8080", base))
-
     results = []
     for b in BENCHMARKS:
         binary = b.get("binary", b["tool"])
         if shutil.which(binary) is None:
             raise RuntimeError(f"missing benchmark tool: {binary} for {b['name']}")
-        cmd = [part.format(targets=vegeta_targets) for part in b["cmd"]]
+        targets = ""
+        if "target_file" in b:
+            target_path = outdir / b["target_file"]
+            target_path.write_text((SCRIPTS / b["target_file"]).read_text().replace("http://kv-nginx:8080", base))
+            targets = str(target_path)
+        cmd = [part.format(targets=targets) for part in b["cmd"]]
         p = run(cmd)
         raw = p.stdout + p.stderr
         (outdir / f"{b['name']}.txt").write_text(raw)

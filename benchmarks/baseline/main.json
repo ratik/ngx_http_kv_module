@@ -14,31 +14,26 @@
       "error_rate": 0.0,
       "errors": 0,
       "name": "wrk-get-existing",
-      "p99_ms": 2.8,
+      "p99_ms": 7.4,
       "returncode": 0,
-      "rps": 43707.31,
+      "rps": 41403.9,
       "timeouts": 0,
       "tool": "wrk"
     },
     {
       "command": [
-        "wrk",
-        "-t2",
-        "-c16",
-        "-d15s",
-        "--latency",
-        "-s",
-        "/workspace/benchmarks/scripts/wrk-put.lua",
-        "http://kv-nginx:8080"
+        "sh",
+        "-lc",
+        "vegeta attack -duration=15s -rate=200 -keepalive=false -targets=/workspace/benchmarks/results/20260517T123236Z-3aeeef042e00/vegeta-put-targets.txt | vegeta report -type=json"
       ],
       "error_rate": 0.0,
       "errors": 0,
-      "name": "wrk-put-small",
-      "p99_ms": 1.05,
+      "name": "vegeta-put-small",
+      "p99_ms": 3.055297,
       "returncode": 0,
-      "rps": 1.06,
+      "rps": 200.07531166856222,
       "timeouts": 0,
-      "tool": "wrk"
+      "tool": "vegeta"
     },
     {
       "command": [
@@ -55,9 +50,9 @@
       "error_rate": 0.0,
       "errors": 0,
       "name": "wrk2-get-existing",
-      "p99_ms": 4.44,
+      "p99_ms": 3.77,
       "returncode": 0,
-      "rps": 47954.87,
+      "rps": 42625.7,
       "timeouts": 0,
       "tool": "wrk2"
     },
@@ -65,14 +60,14 @@
       "command": [
         "sh",
         "-lc",
-        "vegeta attack -duration=15s -rate=200 -targets=/workspace/benchmarks/results/20260517T114227Z-e182d78cc011/vegeta-targets.txt | vegeta report -type=json"
+        "vegeta attack -duration=15s -rate=200 -targets=/workspace/benchmarks/results/20260517T123236Z-3aeeef042e00/vegeta-targets.txt | vegeta report -type=json"
       ],
       "error_rate": 0.0,
       "errors": 0,
       "name": "vegeta-get-existing",
-      "p99_ms": 1.594268,
+      "p99_ms": 1.862896,
       "returncode": 0,
-      "rps": 200.06816685234935,
+      "rps": 200.07328102737696,
       "timeouts": 0,
       "tool": "vegeta"
     }
@@ -81,15 +76,15 @@
     "base_url": "http://kv-nginx:8080",
     "cpu": "",
     "cpu_count": 4,
-    "git_sha": "e182d78cc0118fdf0046b3cda7fb3ce5b821d830",
-    "git_sha_short": "e182d78cc011",
+    "git_sha": "3aeeef042e007701fa6053c342fd63b076dcc1be",
+    "git_sha_short": "3aeeef042e00",
     "memcached_version": "memcached 1.6.18",
-    "module_config": "unknown",
-    "nginx_version": "sh: 1: /usr/local/nginx/sbin/nginx: not found",
+    "module_config": "load_module modules/ngx_http_kv_module.so;\n\nworker_processes auto;\nerror_log /var/log/nginx/error.log info;\npid /tmp/nginx.pid;\n\nevents {\n    worker_connections 1024;\n}\n\nhttp {\n    access_log /var/log/nginx/access.log;\n    client_body_temp_path /tmp/nginx-client-body;\n    client_max_body_size 2m;\n\n    server {\n        listen 8080;\n\n        location /kv/ {\n            kv_memcached_pass unix:/run/memcached/memcached.sock;\n            kv_default_ttl 300;\n            kv_max_value_size 1m;\n            kv_key_prefix \"app:\";\n            kv_allow_methods GET PUT DELETE;\n            kv_not_found_status 404;\n            kv_connect_timeout 2s;\n            kv_send_timeout 2s;\n            kv_read_timeout 2s;\n        }\n    }\n}\n",
+    "nginx_version": "nginx/1.27.4",
     "os": "Linux-6.8.0-47-generic-aarch64-with-glibc2.36",
-    "timestamp": "2026-05-17T11:43:27.441272+00:00",
+    "timestamp": "2026-05-17T12:33:36.873489+00:00",
     "worker_settings": {
-      "worker_connections": 1024,
+      "worker_connections": "1024",
       "worker_processes": "auto"
     }
   }
