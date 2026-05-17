@@ -5,6 +5,10 @@ services:
       dockerfile: docker/Dockerfile
       args:
         NGINX_VERSION: ${NGINX_VERSION:-1.27.4}
+        SANITIZERS: ${SANITIZERS:-0}
+    environment:
+      ASAN_OPTIONS: ${ASAN_OPTIONS:-detect_leaks=0:detect_odr_violation=0:abort_on_error=1}
+      UBSAN_OPTIONS: ${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}
     ports:
       - "8080:8080"
     healthcheck:
@@ -27,6 +31,7 @@ services:
       dockerfile: docker/Dockerfile
       args:
         NGINX_VERSION: ${NGINX_VERSION:-1.27.4}
+        SANITIZERS: ${SANITIZERS:-0}
     depends_on:
       fake-memcached:
         condition: service_started
@@ -37,6 +42,8 @@ services:
       - fuzz-sock:/sock
     environment:
       NGINX_CONF: /usr/local/nginx/conf/nginx-fuzz.conf
+      ASAN_OPTIONS: ${ASAN_OPTIONS:-detect_leaks=0:detect_odr_violation=0:abort_on_error=1}
+      UBSAN_OPTIONS: ${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/kv/__health_missing__"]
       interval: 2s
@@ -50,12 +57,15 @@ services:
       dockerfile: docker/Dockerfile
       args:
         NGINX_VERSION: ${NGINX_VERSION:-1.27.4}
+        SANITIZERS: ${SANITIZERS:-0}
     ports:
       - "8082:8082"
     volumes:
       - ./examples/nginx-bad-backend.conf:/usr/local/nginx/conf/nginx-bad-backend.conf:ro
     environment:
       NGINX_CONF: /usr/local/nginx/conf/nginx-bad-backend.conf
+      ASAN_OPTIONS: ${ASAN_OPTIONS:-detect_leaks=0:detect_odr_violation=0:abort_on_error=1}
+      UBSAN_OPTIONS: ${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}
     healthcheck:
       test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/kv/__health_missing__); test \"$$code\" = 502"]
       interval: 2s

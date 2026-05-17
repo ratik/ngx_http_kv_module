@@ -1,12 +1,16 @@
-.PHONY: test docker-test build clean
+.PHONY: test docker-test sanitizer-test build clean
 
 NGINX_VERSION ?= 1.27.4
+SANITIZERS ?= 0
 
 build:
-	docker build --build-arg NGINX_VERSION=$(NGINX_VERSION) -f docker/Dockerfile -t ngx-http-kv-module:dev .
+	docker build --build-arg NGINX_VERSION=$(NGINX_VERSION) --build-arg SANITIZERS=$(SANITIZERS) -f docker/Dockerfile -t ngx-http-kv-module:dev .
 
 test:
-	NGINX_VERSION=$(NGINX_VERSION) COMPOSE_PROFILES=bad-backend docker compose up --build --abort-on-container-exit --exit-code-from tests tests
+	NGINX_VERSION=$(NGINX_VERSION) SANITIZERS=$(SANITIZERS) COMPOSE_PROFILES=bad-backend docker compose up --build --abort-on-container-exit --exit-code-from tests tests
+
+sanitizer-test:
+	NGINX_VERSION=$(NGINX_VERSION) SANITIZERS=1 COMPOSE_PROFILES=bad-backend docker compose up --build --abort-on-container-exit --exit-code-from tests tests
 
 docker-test: test
 
