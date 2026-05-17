@@ -135,7 +135,7 @@ make test NGINX_VERSION=1.26.3
 make sanitizer-test
 ```
 
-Compose builds Nginx with this module, starts Memcached on Unix socket, starts a fake Memcached backend for fixed and property-based parser-fuzz cases, starts a bad-backend Nginx via the `bad-backend` compose profile, then runs pytest integration tests.
+Compose builds Nginx with this module, starts Memcached on Unix socket, starts a fake Memcached backend for fixed and property-based parser-fuzz cases, starts a bad-backend Nginx via the `bad-backend` compose profile, then runs pytest integration tests. The suite includes concurrent stress coverage for large PUT/GET/DELETE traffic. Tune it with `KV_STRESS_ITEMS`, `KV_STRESS_WORKERS`, `KV_STRESS_VALUE_SIZE`, and `KV_STRESS_TIMEOUT`.
 
 Run bad-backend profile manually:
 
@@ -151,10 +151,6 @@ COMPOSE_PROFILES=bad-backend docker compose up --build kv-nginx-bad-backend test
 - PUT uses `ngx_http_read_client_request_body` and chains Nginx body buffers/files to upstream request.
 - Keys are URL-decoded and strictly rejected if empty, over 250 bytes after prefix, or containing spaces/control chars/CR/LF/NUL.
 - TTL is defaulted from config and can be overridden with `?ttl=<seconds>`.
-
-## Pragmatic score
-
-Current: 7/10.
 
 CI runs the Docker integration suite against Nginx 1.24.x, 1.26.x, and 1.27.x, plus an ASan/UBSan build on current mainline.
 
@@ -174,5 +170,3 @@ benchmarks/results/<timestamp>-<git-sha>/
 
 Captured metadata includes git SHA, OS, CPU, Nginx version, Memcached version, module config, and worker settings. `bench-compare` fails when RPS drops by more than 10%, p99 latency increases by more than 15%, errors exceed 0.1%, or any timeout occurs. CI runs the performance regression job when `benchmarks/baseline/main.json` exists. CI never updates the baseline automatically; baseline changes require `make bench-update-baseline` and an explicit commit.
 
-To reach 10/10:
-- Add stress/load tests around concurrent large PUT/GET/DELETE traffic.
