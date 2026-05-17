@@ -131,7 +131,7 @@ memcached -u nobody -s /run/memcached/memcached.sock -a 777
 make test
 ```
 
-Compose builds Nginx with this module, starts Memcached on Unix socket, then runs pytest integration tests.
+Compose builds Nginx with this module, starts Memcached on Unix socket, starts a fake Memcached backend for parser-fuzz cases, then runs pytest integration tests.
 
 ## Implementation notes
 
@@ -147,7 +147,6 @@ Compose builds Nginx with this module, starts Memcached on Unix socket, then run
 Current: 7/10.
 
 To reach 10/10:
-- Add parser fuzz tests for malformed Memcached responses.
 - Add explicit bad-backend compose profile to automate 502 case.
 - Add CI matrix across Nginx versions.
 - Harden GET trailer validation (`\r\nEND\r\n`) instead of discard-only.

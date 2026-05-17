@@ -403,7 +403,7 @@ ngx_http_kv_reinit_request(ngx_http_request_t *r)
 static ngx_int_t
 ngx_http_kv_process_header(ngx_http_request_t *r)
 {
-    u_char                  *p, *start, *sp, *end;
+    u_char                  *p, *start, *sp, *end, *key_start;
     ngx_int_t                n;
     ngx_str_t                line;
     ngx_http_upstream_t     *u;
@@ -425,9 +425,14 @@ ngx_http_kv_process_header(ngx_http_request_t *r)
 found:
     start = u->buffer.pos;
     end = p;
-    if (end > start && end[-1] == CR) {
-        end--;
+    if (end == start || end[-1] != CR) {
+        line.data = start;
+        line.len = end - start;
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                      "memcached response line without CRLF: \"%V\"", &line);
+        return NGX_HTTP_UPSTREAM_INVALID_HEADER;
     }
+    end--;
 
     line.data = start;
     line.len = end - start;
@@ -452,9 +457,18 @@ found:
             return NGX_HTTP_UPSTREAM_INVALID_HEADER;
         }
 
-        sp = line.data + sizeof("VALUE ") - 1;
+        key_start = line.data + sizeof("VALUE ") - 1;
+        sp = key_start;
         while (sp < end && *sp != ' ') { sp++; }
         if (sp == end) { return NGX_HTTP_UPSTREAM_INVALID_HEADER; }
+        if ((size_t) (sp - key_start) != ctx->key.len
+            || ngx_strncmp(key_start, ctx->key.data, ctx->key.len) != 0)
+        {
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                          "memcached sent invalid key in response for key \"%V\"",
+                          &ctx->key);
+            return NGX_HTTP_UPSTREAM_INVALID_HEADER;
+        }
         sp++;
         while (sp < end && *sp != ' ') { sp++; }
         if (sp == end) { return NGX_HTTP_UPSTREAM_INVALID_HEADER; }

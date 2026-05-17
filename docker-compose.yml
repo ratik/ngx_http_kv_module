@@ -10,14 +10,49 @@ services:
       interval: 2s
       timeout: 1s
       retries: 20
+
+  fake-memcached:
+    image: python:3.12-slim
+    working_dir: /tests
+    volumes:
+      - ./tests:/tests:ro
+      - fuzz-sock:/sock
+    command: python /tests/fake_memcached.py
+
+  kv-nginx-fuzz:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    depends_on:
+      fake-memcached:
+        condition: service_started
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./examples/nginx-fuzz.conf:/usr/local/nginx/conf/nginx-fuzz.conf:ro
+      - fuzz-sock:/sock
+    environment:
+      NGINX_CONF: /usr/local/nginx/conf/nginx-fuzz.conf
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/kv/__health_missing__"]
+      interval: 2s
+      timeout: 1s
+      retries: 20
+
   tests:
     image: python:3.12-slim
     depends_on:
       kv-nginx:
+        condition: service_started
+      kv-nginx-fuzz:
         condition: service_started
     working_dir: /tests
     volumes:
       - ./tests:/tests:ro
     environment:
       KV_BASE_URL: http://kv-nginx:8080
+      KV_FUZZ_URL: http://kv-nginx-fuzz:8081
     command: sh -c "pip install -q pytest requests && pytest -q"
+
+volumes:
+  fuzz-sock:

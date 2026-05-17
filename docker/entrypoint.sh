@@ -8,4 +8,4 @@ for i in $(seq 1 50); do
   [ -S /run/memcached/memcached.sock ] && break
   sleep 0.1
 done
-exec /usr/local/nginx/sbin/nginx -g 'daemon off;'
+exec /usr/local/nginx/sbin/nginx -c "${NGINX_CONF:-/usr/local/nginx/conf/nginx.conf}" -g 'daemon off;'
