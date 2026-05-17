@@ -110,6 +110,7 @@ services:
     command: ["update-baseline"]
 
   tests:
+    profiles: ["bad-backend"]
     image: python:3.12-slim
     depends_on:
       kv-nginx:
