@@ -50,6 +50,40 @@ jobs:
         if: always()
         run: docker compose down -v --remove-orphans
 
+  performance:
+    name: Performance regression
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('benchmarks/baseline/main.json') != '' }}
+    env:
+      NGINX_VERSION: 1.27.4
+      COMPOSE_PROFILES: bench
+      COMPOSE_PROJECT_NAME: kv_perf_${{ github.run_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run benchmarks
+        run: make bench
+
+      - name: Compare with baseline
+        run: make bench-compare
+
+      - name: Upload performance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results
+          path: benchmarks/results/**
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v --remove-orphans
+
   sanitizer-test:
     name: Nginx ${{ matrix.nginx-version }} ASan/UBSan
     runs-on: ubuntu-latest

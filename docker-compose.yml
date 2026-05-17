@@ -72,6 +72,43 @@ services:
       timeout: 1s
       retries: 20
 
+  bench:
+    profiles: ["bench"]
+    build:
+      context: .
+      dockerfile: docker/bench.Dockerfile
+    depends_on:
+      kv-nginx:
+        condition: service_started
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      KV_BENCH_URL: http://kv-nginx:8080
+      NGINX_VERSION: ${NGINX_VERSION:-1.27.4}
+      NGINX_CONF_PATH: /workspace/examples/nginx.conf
+    command: ["bench", "--base-url", "http://kv-nginx:8080"]
+
+  bench-compare:
+    profiles: ["bench"]
+    build:
+      context: .
+      dockerfile: docker/bench.Dockerfile
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: ["compare"]
+
+  bench-update-baseline:
+    profiles: ["bench"]
+    build:
+      context: .
+      dockerfile: docker/bench.Dockerfile
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: ["update-baseline"]
+
   tests:
     image: python:3.12-slim
     depends_on:

@@ -1,0 +1,1 @@
+GET http://kv-nginx:8080/kv/bench-existing

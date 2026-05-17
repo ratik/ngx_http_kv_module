@@ -129,9 +129,19 @@ memcached -u nobody -s /run/memcached/memcached.sock -a 777
 
 ```sh
 make test
+# or test a specific Nginx release
+make test NGINX_VERSION=1.26.3
+# or build/run Nginx and the module with ASan/UBSan
+make sanitizer-test
 ```
 
-Compose builds Nginx with this module, starts Memcached on Unix socket, starts a fake Memcached backend for parser-fuzz cases, then runs pytest integration tests.
+Compose builds Nginx with this module, starts Memcached on Unix socket, starts a fake Memcached backend for fixed and property-based parser-fuzz cases, starts a bad-backend Nginx via the `bad-backend` compose profile, then runs pytest integration tests.
+
+Run bad-backend profile manually:
+
+```sh
+COMPOSE_PROFILES=bad-backend docker compose up --build kv-nginx-bad-backend tests
+```
 
 ## Implementation notes
 
@@ -146,7 +156,23 @@ Compose builds Nginx with this module, starts Memcached on Unix socket, starts a
 
 Current: 7/10.
 
+CI runs the Docker integration suite against Nginx 1.24.x, 1.26.x, and 1.27.x, plus an ASan/UBSan build on current mainline.
+
+## Performance regression tracking
+
+```sh
+make bench                 # run fixed wrk/wrk2/vegeta benchmarks
+make bench-compare         # compare latest result with benchmarks/baseline/main.json
+make bench-update-baseline # explicitly promote latest result to baseline
+```
+
+Benchmark runs write stable JSON, raw tool output, metadata, and a markdown report under:
+
+```text
+benchmarks/results/<timestamp>-<git-sha>/
+```
+
+Captured metadata includes git SHA, OS, CPU, Nginx version, Memcached version, module config, and worker settings. `bench-compare` fails when RPS drops by more than 10%, p99 latency increases by more than 15%, errors exceed 0.1%, or any timeout occurs. CI runs the performance regression job when `benchmarks/baseline/main.json` exists. CI never updates the baseline automatically; baseline changes require `make bench-update-baseline` and an explicit commit.
+
 To reach 10/10:
-- Add explicit bad-backend compose profile to automate 502 case.
-- Add CI matrix across Nginx versions.
-- Harden GET trailer validation (`\r\nEND\r\n`) instead of discard-only.
+- Add stress/load tests around concurrent large PUT/GET/DELETE traffic.

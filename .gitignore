@@ -47,3 +47,6 @@ venv/
 !.env.example
 
 pi-session-*
+# Benchmark outputs
+benchmarks/results/*
+!benchmarks/results/.gitkeep
