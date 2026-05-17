@@ -4,7 +4,7 @@ ARG TARGETARCH
 ARG VEGETA_VERSION=12.12.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential ca-certificates curl git libssl-dev python3 memcached unzip \
+    build-essential ca-certificates wget libpcre3-dev zlib1g-dev curl git libssl-dev python3 memcached unzip \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 https://github.com/wg/wrk.git /tmp/wrk \
