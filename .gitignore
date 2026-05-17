@@ -1,0 +1,49 @@
+# Build artifacts
+objs/
+*.o
+*.so
+*.a
+*.la
+*.lo
+*.dylib
+*.dll
+*.exe
+
+# Nginx source/build dirs if unpacked locally
+nginx-*/
+nginx-*.tar.gz
+modules/
+logs/
+client_body_temp/
+proxy_temp/
+fastcgi_temp/
+uwsgi_temp/
+scgi_temp/
+
+# Docker / compose
+.docker/
+*.pid
+
+# Python tests
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local env
+.env
+.env.*
+!.env.example
+
+pi-session-*

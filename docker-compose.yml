@@ -1,0 +1,23 @@
+services:
+  kv-nginx:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/kv/__health_missing__"]
+      interval: 2s
+      timeout: 1s
+      retries: 20
+  tests:
+    image: python:3.12-slim
+    depends_on:
+      kv-nginx:
+        condition: service_started
+    working_dir: /tests
+    volumes:
+      - ./tests:/tests:ro
+    environment:
+      KV_BASE_URL: http://kv-nginx:8080
+    command: sh -c "pip install -q pytest requests && pytest -q"
