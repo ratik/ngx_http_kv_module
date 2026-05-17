@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Nginx ${{ matrix.nginx-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        nginx-version:
+          - 1.24.0
+          - 1.26.3
+          - 1.27.4
+
+    env:
+      NGINX_VERSION: ${{ matrix.nginx-version }}
+      COMPOSE_PROFILES: bad-backend
+      COMPOSE_PROJECT_NAME: kv_${{ github.run_id }}_${{ strategy.job-index }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Docker versions
+        run: |
+          docker version
+          docker compose version
+
+      - name: Build and run integration tests
+        run: docker compose up --build --abort-on-container-exit --exit-code-from tests tests
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v --remove-orphans
