@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import binascii
 import os
 import socket
 import threading
@@ -27,6 +28,13 @@ def response_for(line: bytes) -> bytes:
             b"bad-wrong-key": b"VALUE app:other 0 1\r\nx\r\nEND\r\n",
             b"bad-garbage": b"\x00\x01not memcached\r\n",
         }
+
+        if suffix.startswith(b"fuzz-"):
+            try:
+                return binascii.unhexlify(suffix[len(b"fuzz-"):])
+            except (binascii.Error, ValueError):
+                return b"ERROR\r\n"
+
         return cases.get(suffix, b"END\r\n")
 
     if cmd == b"delete":

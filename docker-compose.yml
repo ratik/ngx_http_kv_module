@@ -72,7 +72,7 @@ services:
       KV_BASE_URL: http://kv-nginx:8080
       KV_FUZZ_URL: http://kv-nginx-fuzz:8081
       KV_BAD_BACKEND_URL: http://kv-nginx-bad-backend:8082
-    command: sh -c "pip install -q pytest requests && pytest -q"
+    command: sh -c "pip install -q pytest requests hypothesis && pytest -q"
 
 volumes:
   fuzz-sock:

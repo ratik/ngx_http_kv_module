@@ -1,6 +1,8 @@
+import binascii
 import os
 import time
 
+from hypothesis import given, settings, strategies as st
 import pytest
 import requests
 
@@ -47,3 +49,39 @@ def test_malformed_memcached_response_returns_502(case):
     assert b"VALUE " not in r.content
     assert b"ERROR" not in r.content
     assert b"CLIENT_ERROR" not in r.content
+
+
+@pytest.mark.skipif(not FUZZ_BASE, reason="set KV_FUZZ_URL")
+@given(st.binary(min_size=0, max_size=64))
+@settings(max_examples=100, deadline=None)
+def test_random_invalid_first_line_returns_502(payload):
+    # Prefix guarantees first memcached response line is neither VALUE nor END.
+    response = b"FUZZ" + payload
+    encoded = binascii.hexlify(response).decode("ascii")
+
+    r = requests.get(f"{FUZZ_BASE}/kv/fuzz-{encoded}", timeout=3)
+
+    assert r.status_code == 502
+    assert b"FUZZ" not in r.content
+
+
+@pytest.mark.skipif(not FUZZ_BASE, reason="set KV_FUZZ_URL")
+@given(
+    key_suffix=st.text(
+        alphabet=st.characters(min_codepoint=0x21, max_codepoint=0x7e, blacklist_characters=" "),
+        min_size=0,
+        max_size=24,
+    ),
+    flags=st.text(alphabet=st.characters(min_codepoint=0x21, max_codepoint=0x7e), min_size=0, max_size=8),
+    length=st.text(alphabet=st.characters(min_codepoint=0x21, max_codepoint=0x7e), min_size=0, max_size=8),
+)
+@settings(max_examples=100, deadline=None)
+def test_random_malformed_value_line_returns_502(key_suffix, flags, length):
+    # Wrong key plus arbitrary flags/length must never become client-visible backend protocol.
+    line = f"VALUE app:not-requested{key_suffix} {flags} {length}\r\n".encode("utf-8", "ignore")
+    encoded = binascii.hexlify(line).decode("ascii")
+
+    r = requests.get(f"{FUZZ_BASE}/kv/fuzz-{encoded}", timeout=3)
+
+    assert r.status_code == 502
+    assert b"VALUE " not in r.content
